@@ -1,0 +1,50 @@
+SHADOW SECURITY COO OS — OWNER GUIDE
+
+OPEN
+1. Double-click “Shadow Security COO” on your Desktop.
+2. It opens directly as Arya — COO.
+3. If you open the normal workspace link, choose your name under “Continue as”. This is not a login.
+
+YOUR MORNING ROUTINE
+1. Open Dashboard and read Needs Attention first.
+2. Open Follow Up and chase the items due today.
+3. Review Overdue, Blocked, and Awaiting Review.
+4. Check Team Pulse to see who is carrying too much or is blocked.
+5. Check Project Pulse—protect Shastra delivery first.
+6. Use Quick Add or press N to create and assign new work.
+
+TASKS
+- All Tasks → Board shows Backlog, Todo, In Progress, Review, Blocked, Done.
+- Drag a task to update its status.
+- Click a task to edit details, deadline, owner, checklist, blocker, follow-up, or comments.
+
+TEAM MEMBERS
+- They open the same app and choose their name.
+- They land on My Work, which shows today, upcoming, overdue, projects, content, and follow-ups.
+- Everyone sees the same shared data; profile choice records who made the update.
+
+ADD A MEMBER
+1. Select Arya — COO.
+2. Open Settings.
+3. In Team, enter Name and Role. Department and email are optional.
+4. Click Add member. No password is created.
+
+CONTENT
+- Content Pipeline moves work from Idea through Published.
+- Content Calendar shows scheduled dates. Drag content to a different day to reschedule.
+- Approval state is shown separately from production stage.
+
+MEETING NOTES
+1. Open Notes.
+2. Click Meeting note.
+3. Add decisions and action items.
+4. Click Convert to task beside an action item, then assign it.
+
+BACKUP
+1. Open Settings → Backup workspace.
+2. Click Backup workspace.
+3. To restore, choose a listed backup and click Restore.
+The app automatically makes a safety backup before restore or demo reset.
+
+PUTTING IT ONLINE LATER
+Do not share the local address with the team—it only works on this PC. When ready, deploy the frontend and backend behind HTTPS, move the database to managed PostgreSQL, and add proper organisation access before sharing the team URL.
