@@ -61,9 +61,16 @@ create table if not exists tasks (
   blocked_reason  text,
   archived        boolean not null default false,
   position        integer not null default 0,
+  recurrence      text not null default 'none'
+                  check (recurrence in ('none','daily','weekly','monthly')),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
+
+-- Adds the recurrence column to a database created before this feature existed.
+alter table tasks add column if not exists recurrence text not null default 'none';
+alter table tasks drop constraint if exists tasks_recurrence_check;
+alter table tasks add constraint tasks_recurrence_check check (recurrence in ('none','daily','weekly','monthly'));
 
 create table if not exists checklist_items (
   id         text primary key,
@@ -172,6 +179,17 @@ create table if not exists settings (
   value text not null
 );
 
+create table if not exists attachments (
+  id          text primary key,
+  task_id     text not null references tasks(id) on delete cascade,
+  file_name   text not null,
+  file_path   text not null,
+  file_size   integer not null default 0,
+  uploaded_by text references profiles(id) on delete set null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_attachments_task on attachments(task_id);
+
 -- ---------- Indexes ----------
 
 create index if not exists idx_profiles_user     on profiles(user_id);
@@ -252,6 +270,7 @@ alter table notes           enable row level security;
 alter table activity        enable row level security;
 alter table notifications   enable row level security;
 alter table settings        enable row level security;
+alter table attachments     enable row level security;
 
 -- Shared read for every signed-in workspace member
 do $$
@@ -358,3 +377,36 @@ create policy notif_own on notifications for all to authenticated
   with check (profile_id = public.current_profile_id());
 create policy notif_ins on notifications for insert to authenticated
   with check (public.has_access());
+
+-- Attachments: anyone in the workspace can attach/see files on a task they can see.
+-- Admins can remove any attachment; members can remove ones they uploaded.
+drop policy if exists attach_read   on attachments;
+drop policy if exists attach_insert on attachments;
+drop policy if exists attach_delete on attachments;
+create policy attach_read on attachments for select to authenticated
+  using (public.has_access());
+create policy attach_insert on attachments for insert to authenticated
+  with check (uploaded_by = public.current_profile_id());
+create policy attach_delete on attachments for delete to authenticated
+  using (public.is_admin() or uploaded_by = public.current_profile_id());
+
+-- ============================================================
+-- File storage for task attachments
+-- Run this once. Creates a private bucket; access is controlled entirely by
+-- the policies below (same "workspace members only" rule as the tables).
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+values ('task-attachments', 'task-attachments', false)
+on conflict (id) do nothing;
+
+drop policy if exists attach_storage_read   on storage.objects;
+drop policy if exists attach_storage_write  on storage.objects;
+drop policy if exists attach_storage_delete on storage.objects;
+
+create policy attach_storage_read on storage.objects for select to authenticated
+  using (bucket_id = 'task-attachments' and public.has_access());
+create policy attach_storage_write on storage.objects for insert to authenticated
+  with check (bucket_id = 'task-attachments' and public.has_access());
+create policy attach_storage_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'task-attachments' and (public.is_admin() or owner = auth.uid()));

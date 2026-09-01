@@ -14,8 +14,8 @@ truncate table checklist_items, comments, notifications, activity, milestones,
 -- Arya and Samarth are admins; everyone else is a member.
 
 insert into profiles (id, name, role, access_role, department, email) values
-  ('arya',    'Arya',    'COO',        'admin',  'Operations', 'arya@shadowsecurity.in'),
-  ('samarth', 'Samarth', 'Co-founder', 'admin',  'Operations', 'samarth@shadowsecurity.in'),
+  ('arya',    'Arya',    'COO',        'admin',  'Operations', 'aryabhushan003@gmail.com'),
+  ('samarth', 'Samarth', 'Co-founder', 'admin',  'Operations', 'esrsamarth@gmail.com'),
   ('team-01', 'Team Member 01', 'Product Engineer',      'member', 'Product',            'team01@shadowsecurity.in'),
   ('team-02', 'Team Member 02', 'Security Researcher',   'member', 'Security',           'team02@shadowsecurity.in'),
   ('team-03', 'Team Member 03', 'Frontend Engineer',     'member', 'Engineering',        'team03@shadowsecurity.in'),

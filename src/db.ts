@@ -1,5 +1,5 @@
 import { client } from './supabase';
-import { deriveWorkspace, todayISO, type RawWorkspace } from './derive';
+import { addDays, deriveWorkspace, todayISO, type RawWorkspace } from './derive';
 import type { ContentItem, Note, Profile, Task, Workspace } from './types';
 
 const uid = (prefix: string) =>
@@ -24,12 +24,21 @@ async function logActivity(profileId: string | null, action: string, entityType:
   if (error) console.error('[COO OS] activity log failed:', error);
 }
 
+/** Sends someone a notification. Never blocks the calling action if it fails. */
+async function notify(profileId: string | null | undefined, message: string) {
+  if (!profileId) return;
+  const { error } = await client().from('notifications').insert({
+    id: uid('notif'), profile_id: profileId, message, read: false, created_at: nowIso(),
+  });
+  if (error) console.error('[COO OS] notification failed:', error);
+}
+
 /** Loads every table the workspace needs, then computes the derived views. */
 export async function loadWorkspace(): Promise<Workspace> {
   const sb = client();
   const [
     profiles, projects, tasks, checklist, comments, content,
-    platforms, milestones, meetings, notes, activity, notifications, settings,
+    platforms, milestones, meetings, notes, activity, notifications, attachments, settings,
   ] = await Promise.all([
     sb.from('profiles').select('*').eq('active', true).order('access_role', { ascending: false }).order('name'),
     sb.from('projects').select('*').order('deadline', { nullsFirst: false }),
@@ -43,6 +52,7 @@ export async function loadWorkspace(): Promise<Workspace> {
     sb.from('notes').select('*').order('pinned', { ascending: false }).order('updated_at', { ascending: false }),
     sb.from('activity').select('*').order('created_at', { ascending: false }).limit(100),
     sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
+    sb.from('attachments').select('*').order('created_at', { ascending: false }),
     sb.from('settings').select('*'),
   ]);
 
@@ -64,6 +74,7 @@ export async function loadWorkspace(): Promise<Workspace> {
     notes: unwrap(notes, 'load notes'),
     activity: activityRows.map(a => ({ ...a, profile_name: a.profile_id ? nameById.get(a.profile_id) : undefined })),
     notifications: unwrap(notifications, 'load notifications'),
+    attachments: unwrap(attachments, 'load attachments'),
     settings: Object.fromEntries(settingsRows.map(s => [s.key, s.value])),
   };
 
@@ -76,6 +87,7 @@ export interface NewTask {
   title: string; description?: string; assignee_id?: string | null; project_id?: string | null;
   status?: Task['status']; priority?: Task['priority'];
   due_date?: string | null; start_date?: string | null; follow_up_date?: string | null;
+  recurrence?: Task['recurrence'];
 }
 
 export async function createTask(input: NewTask, actorId: string) {
@@ -92,11 +104,23 @@ export async function createTask(input: NewTask, actorId: string) {
     due_date: input.due_date || null,
     start_date: input.start_date || null,
     follow_up_date: input.follow_up_date || null,
+    recurrence: input.recurrence || 'none',
     created_at: nowIso(), updated_at: nowIso(),
   });
   if (error) { console.error(error); throw new Error("Couldn't create the task. Please try again."); }
   await logActivity(actorId, `created "${title}"`, 'task', id);
+  if (input.assignee_id && input.assignee_id !== actorId) {
+    await notify(input.assignee_id, `You were assigned a new task: "${title}"`);
+  }
   return id;
+}
+
+/** Recurrence step in days used to schedule the next occurrence. */
+function recurrenceDays(recurrence: Task['recurrence']): number | null {
+  if (recurrence === 'daily') return 1;
+  if (recurrence === 'weekly') return 7;
+  if (recurrence === 'monthly') return 30;
+  return null;
 }
 
 export async function updateTask(id: string, patch: Partial<Task>, actorId: string, previous?: Task) {
@@ -109,6 +133,26 @@ export async function updateTask(id: string, patch: Partial<Task>, actorId: stri
     moved ? `moved "${title}" to ${patch.status!.replace('_', ' ')}` : `updated "${title}"`,
     'task', id,
   );
+  const newAssignee = patch.assignee_id;
+  if (newAssignee && newAssignee !== previous?.assignee_id && newAssignee !== actorId) {
+    await notify(newAssignee, `You were assigned to "${title}"`);
+  }
+  // If a recurring task was just completed, schedule its next occurrence.
+  if (patch.status === 'done' && previous && previous.recurrence !== 'none') {
+    const days = recurrenceDays(previous.recurrence);
+    if (days) {
+      const nextDue = previous.due_date ? addDays(previous.due_date, days) : addDays(todayISO(), days);
+      await createTask({
+        title: previous.title,
+        description: previous.description,
+        assignee_id: previous.assignee_id,
+        project_id: previous.project_id,
+        priority: previous.priority,
+        due_date: nextDue,
+        recurrence: previous.recurrence,
+      }, actorId);
+    }
+  }
 }
 
 export async function archiveTask(id: string, title: string, actorId: string) {
@@ -144,6 +188,50 @@ export async function addComment(taskId: string, body: string, profileId: string
     .insert({ id: uid('comment'), task_id: taskId, profile_id: profileId, body: value, created_at: nowIso() });
   if (error) { console.error(error); throw new Error("Couldn't post the comment."); }
   await logActivity(profileId, 'commented on a task', 'task', taskId);
+  const { data: task } = await client().from('tasks').select('title, assignee_id').eq('id', taskId).maybeSingle();
+  if (task?.assignee_id && task.assignee_id !== profileId) {
+    await notify(task.assignee_id, `New comment on "${task.title}"`);
+  }
+}
+
+// ---------- Attachments ----------
+
+const ATTACHMENTS_BUCKET = 'task-attachments';
+
+export async function listAttachmentUrl(filePath: string): Promise<string> {
+  const { data, error } = await client().storage.from(ATTACHMENTS_BUCKET).createSignedUrl(filePath, 3600);
+  if (error || !data) throw new Error("Couldn't open that file.");
+  return data.signedUrl;
+}
+
+export async function uploadAttachment(taskId: string, file: File, actorId: string) {
+  const path = `${taskId}/${Date.now()}_${file.name}`;
+  const { error: uploadError } = await client().storage.from(ATTACHMENTS_BUCKET).upload(path, file);
+  if (uploadError) { console.error(uploadError); throw new Error("Couldn't upload the file. Please try again."); }
+  const { error } = await client().from('attachments').insert({
+    id: uid('file'), task_id: taskId, file_name: file.name, file_path: path,
+    file_size: file.size, uploaded_by: actorId, created_at: nowIso(),
+  });
+  if (error) { console.error(error); throw new Error("Couldn't save the file record."); }
+  await logActivity(actorId, `attached "${file.name}"`, 'task', taskId);
+}
+
+export async function deleteAttachment(id: string, filePath: string) {
+  await client().storage.from(ATTACHMENTS_BUCKET).remove([filePath]);
+  const { error } = await client().from('attachments').delete().eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't remove the attachment."); }
+}
+
+// ---------- Notifications ----------
+
+export async function markNotificationRead(id: string) {
+  const { error } = await client().from('notifications').update({ read: true }).eq('id', id);
+  if (error) console.error('[COO OS] mark notification read failed:', error);
+}
+
+export async function markAllNotificationsRead(profileId: string) {
+  const { error } = await client().from('notifications').update({ read: true }).eq('profile_id', profileId).eq('read', false);
+  if (error) console.error('[COO OS] mark all notifications read failed:', error);
 }
 
 // ---------- Projects ----------
@@ -328,6 +416,7 @@ export function downloadBackup(ws: Workspace) {
     checklist: ws.checklist, comments: ws.comments, content: ws.content,
     platforms: ws.platforms, milestones: ws.milestones, meetings: ws.meetings,
     notes: ws.notes, activity: ws.activity, settings: ws.settings,
+    attachments: ws.attachments,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

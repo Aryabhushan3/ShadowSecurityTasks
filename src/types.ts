@@ -2,11 +2,13 @@ export type Status = 'backlog' | 'todo' | 'in_progress' | 'review' | 'blocked' |
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';
 export type Health = 'on_track' | 'at_risk' | 'blocked';
 export type Level = 'low' | 'normal' | 'high' | 'overloaded';
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export interface Profile { id: string; user_id: string | null; name: string; role: string; access_role: 'admin' | 'member'; department: string; email: string; active: boolean }
 export interface ProjectRow { id: string; name: string; description: string; owner_id: string | null; team: string[]; status: string; deadline: string | null; progress: number }
 export interface Project extends ProjectRow { health: Health; reasons: string[]; taskCount: number; completed: number }
-export interface Task { id: string; title: string; description: string; assignee_id: string | null; project_id: string | null; status: Status; priority: Priority; due_date: string | null; start_date: string | null; follow_up_date: string | null; blocked_reason: string | null; archived: boolean; position: number; updated_at: string }
+export interface Task { id: string; title: string; description: string; assignee_id: string | null; project_id: string | null; status: Status; priority: Priority; due_date: string | null; start_date: string | null; follow_up_date: string | null; blocked_reason: string | null; archived: boolean; position: number; recurrence: Recurrence; updated_at: string }
+export interface Attachment { id: string; task_id: string; file_name: string; file_path: string; file_size: number; uploaded_by: string | null; created_at: string }
 export interface Checklist { id: string; task_id: string; text: string; completed: boolean; position: number }
 export interface Comment { id: string; task_id: string; profile_id: string | null; body: string; created_at: string }
 export interface Platform { id: string; name: string; active: boolean }
@@ -42,6 +44,7 @@ export interface Workspace {
   notes: Note[];
   activity: Activity[];
   notifications: Notification[];
+  attachments: Attachment[];
   settings: Record<string, string>;
   attention: Attention;
   workload: Workload[];

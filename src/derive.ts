@@ -1,5 +1,5 @@
 import type {
-  Activity, Attention, Checklist, Comment, ContentItem, Health, Level, Meeting,
+  Activity, Attachment, Attention, Checklist, Comment, ContentItem, Health, Level, Meeting,
   Milestone, Note, Notification, Platform, Profile, Project, ProjectRow, Task,
   Weekly, Workload, Workspace,
 } from './types';
@@ -78,6 +78,7 @@ export interface RawWorkspace {
   notes: Note[];
   activity: Activity[];
   notifications: Notification[];
+  attachments: Attachment[];
   settings: Record<string, string>;
 }
 
@@ -142,6 +143,7 @@ export function deriveWorkspace(raw: RawWorkspace, today = todayISO()): Workspac
     notes: raw.notes,
     activity: raw.activity,
     notifications: raw.notifications,
+    attachments: raw.attachments,
     settings: raw.settings,
     attention,
     workload,

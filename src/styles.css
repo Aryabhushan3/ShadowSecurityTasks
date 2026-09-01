@@ -11,4 +11,25 @@
 .icon.danger{color:var(--danger,#e5484d)}
 .icon.danger:hover{background:rgba(229,72,77,.12)}
 
+
+/* --- Notifications: unread badge on the bell + unread highlight in the list + mark-all-read --- */
+.icon{position:relative}
+.badge-count{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#e0503c;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+.notifications{width:320px;max-height:380px;overflow:auto}
+.popover-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.link-button.small{font-size:11px;margin-top:0;display:inline-flex;align-items:center;gap:4px}
+.notification{display:flex;width:100%;text-align:left;border:0;background:transparent;padding:9px 4px}
+.notification.unread{background:var(--surface-2,rgba(120,120,255,.07))}
+.notification.unread .notification-dot{background:var(--accent)}
+
+/* --- Recurring tasks: repeat icon next to the priority/status area if needed --- */
+.recurring-flag{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:11px}
+
+/* --- Task attachments --- */
+.attachment-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.attachment-row:last-of-type{border-bottom:0}
+.attachment-link{display:flex;align-items:center;gap:7px;border:0;background:transparent;padding:0;flex:1;min-width:0;text-align:left}
+.attachment-link span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment-link small{color:var(--muted);margin-left:auto;flex-shrink:0}
+
 .projects-table .table-head:has(span:nth-child(6)),.projects-table .table-row:has(span:nth-child(6)){grid-template-columns:minmax(220px,2fr) 140px minmax(170px,1fr) 90px 150px 84px}
