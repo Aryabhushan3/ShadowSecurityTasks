@@ -73,7 +73,7 @@ export async function loadWorkspace(): Promise<Workspace> {
 // ---------- Tasks ----------
 
 export interface NewTask {
-  title: string; assignee_id?: string | null; project_id?: string | null;
+  title: string; description?: string; assignee_id?: string | null; project_id?: string | null;
   status?: Task['status']; priority?: Task['priority'];
   due_date?: string | null; start_date?: string | null; follow_up_date?: string | null;
 }
@@ -84,6 +84,7 @@ export async function createTask(input: NewTask, actorId: string) {
   const id = uid('task');
   const { error } = await client().from('tasks').insert({
     id, title,
+    description: input.description || '',
     assignee_id: input.assignee_id || null,
     project_id: input.project_id || null,
     status: input.status || 'todo',
@@ -172,6 +173,12 @@ export async function createProject(
 export async function updateProject(id: string, patch: Record<string, unknown>) {
   const { error } = await client().from('projects').update({ ...patch, updated_at: nowIso() }).eq('id', id);
   if (error) { console.error(error); throw new Error("Couldn't save the project."); }
+}
+
+export async function deleteProject(id: string, name: string, actorId: string) {
+  const { error } = await client().from('projects').delete().eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't delete the project."); }
+  await logActivity(actorId, `deleted project "${name}"`, 'project', id);
 }
 
 // ---------- Content ----------
