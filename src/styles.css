@@ -1,3 +1,7 @@
+.person-actions{display:flex;gap:4px;margin-left:auto}
+.icon.danger{color:var(--danger,#e5484d)}
+.icon.danger:hover{background:rgba(229,72,77,.12)}
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&display=swap');
 :root{font-family:Inter,"Segoe UI",sans-serif;color-scheme:light;--bg:#f5f5f2;--panel:#fff;--panel-2:#fafaf8;--panel-3:#f0f0ec;--text:#18191b;--muted:#686b70;--faint:#92959a;--border:#dddeda;--border-strong:#c8cac5;--accent:#087e8b;--accent-soft:#e2f2f3;--accent-text:#075e67;--red:#b43b3b;--red-soft:#f9e9e7;--amber:#9a6514;--amber-soft:#f8efdc;--green:#32725a;--green-soft:#e3f1e9;--blue:#3d62a8;--blue-soft:#e8eef9;--shadow:0 10px 30px rgba(16,18,20,.08);--radius:5px}
 [data-theme=dark]{color-scheme:dark;--bg:#0e1012;--panel:#151719;--panel-2:#191b1e;--panel-3:#202327;--text:#e7e8e5;--muted:#a0a3a7;--faint:#6f7378;--border:#2a2d31;--border-strong:#3a3e43;--accent:#42b8c3;--accent-soft:#143338;--accent-text:#83d4db;--red:#eb7771;--red-soft:#381d1e;--amber:#dfaa57;--amber-soft:#372b19;--green:#75c49e;--green-soft:#173027;--blue:#8bacf1;--blue-soft:#1c2942;--shadow:0 14px 40px rgba(0,0,0,.3)}

@@ -148,10 +148,10 @@ export async function addComment(taskId: string, body: string, profileId: string
 // ---------- Projects ----------
 
 export async function createProject(
-  input: { name: string; description?: string; owner_id?: string | null; deadline?: string | null; team?: string[] },
+  input: { name?: string; title?: string; description?: string; owner_id?: string | null; deadline?: string | null; team?: string[] },
   actorId: string,
 ) {
-  const name = input.name.trim();
+  const name = (input.name ?? input.title ?? '').trim();
   if (!name) throw new Error('Please give the project a name.');
   const id = uid('project');
   const { error } = await client().from('projects').insert({
@@ -226,6 +226,24 @@ export async function addProfile(input: { name: string; role: string; department
 export async function setProfileActive(id: string, active: boolean) {
   const { error } = await client().from('profiles').update({ active, updated_at: nowIso() }).eq('id', id);
   if (error) { console.error(error); throw new Error("Couldn't update the team member."); }
+}
+
+export async function updateProfile(id: string, patch: { name?: string; role?: string; department?: string; email?: string }, actorId: string) {
+  const clean: Record<string, unknown> = { updated_at: nowIso() };
+  if (patch.name !== undefined) { const v = patch.name.trim(); if (!v) throw new Error('Name cannot be empty.'); clean.name = v; }
+  if (patch.role !== undefined) { const v = patch.role.trim(); if (!v) throw new Error('Role cannot be empty.'); clean.role = v; }
+  if (patch.department !== undefined) clean.department = patch.department.trim();
+  if (patch.email !== undefined) { const v = patch.email.trim(); if (!v) throw new Error('Email cannot be empty.'); clean.email = v; }
+  const { error } = await client().from('profiles').update(clean).eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't save changes. The email may already be in use."); }
+  await logActivity(actorId, `updated team member details`, 'profile', id);
+}
+
+export async function deleteProfile(id: string, actorId: string) {
+  if (id === actorId) throw new Error('You cannot remove your own account.');
+  const { error } = await client().from('profiles').delete().eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't remove the team member."); }
+  await logActivity(actorId, `removed a team member`, 'profile', id);
 }
 
 export async function addPlatform(name: string) {
