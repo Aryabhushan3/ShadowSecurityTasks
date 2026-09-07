@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity as ActivityIcon, AlertTriangle, Archive, Bell, Blocks, CalendarDays, Check, CheckCheck, ChevronDown, CircleUserRound, ClipboardCheck, Columns3, FileText, FolderKanban, Gauge, LayoutDashboard, ListChecks, LogOut, Menu, Moon, MoreHorizontal, Paperclip, Pencil, Plus, RefreshCw, ShieldCheck, Sun, Trash2, Users, X } from 'lucide-react';
 import { isConfigured } from './supabase';
 import { useAuth } from './auth';
-import { loadWorkspace, createTask, updateTask, archiveTask, addChecklistItem, setChecklistItem, deleteChecklistItem, addComment, createProject, updateProject, deleteProject, createContent, updateContent, addProfile, updateProfile, deleteProfile, addPlatform, createMeeting, convertActionToTask, createNote, downloadBackup, markNotificationRead, markAllNotificationsRead, uploadAttachment, deleteAttachment, listAttachmentUrl } from './db';
+import { loadWorkspace, createTask, updateTask, archiveTask, addChecklistItem, setChecklistItem, deleteChecklistItem, addComment, createProject, updateProject, deleteProject, createContent, updateContent, deleteContent, addProfile, updateProfile, deleteProfile, addPlatform, createMeeting, convertActionToTask, createNote, downloadBackup, markNotificationRead, markAllNotificationsRead, uploadAttachment, deleteAttachment, listAttachmentUrl } from './db';
 import type { ContentItem, Profile, Project, Status, Task, Workspace } from './types';
 
 const labels: Record<string, string> = { in_progress: 'In progress', at_risk: 'At risk', on_track: 'On track', on_hold: 'On hold', due_today: 'Due today', due_tomorrow: 'Due tomorrow', follow_up: 'Follow up', in_review: 'In review', changes_requested: 'Changes requested' };
@@ -208,11 +208,44 @@ function CalendarPage({ ws, contentOnly, mutate, active }: { ws: Workspace; cont
   return <><Header eyebrow={contentOnly ? 'CONTENT' : 'WORKSPACE'} title={contentOnly ? 'Content calendar' : 'Unified calendar'} description={contentOnly ? 'Drag content to move its publishing date.' : 'Tasks, follow-ups, project milestones, and content in one operational view.'} /><div className="calendar-toolbar"><button>Today</button><strong>{new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric' }).format(base)}</strong><div className="legend"><span><i className="legend-task" />Task</span><span><i className="legend-content" />Content</span><span><i className="legend-follow" />Follow-up</span></div></div><div className="calendar-grid"><div className="weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <span key={d}>{d}</span>)}</div><div className="calendar-days">{days.map(d => { const date = iso(d), outside = d.getMonth() !== base.getMonth(); const contents = ws.content.filter(c => c.publish_date === date); const tasks = contentOnly ? [] : ws.tasks.filter(t => t.due_date === date); const follows = contentOnly ? [] : ws.tasks.filter(t => t.follow_up_date === date); return <div key={date} className={`${outside ? 'outside' : ''} ${date === ws.today ? 'today' : ''}`} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, date)}><time>{d.getDate()}</time>{contents.slice(0, 3).map(c => <button draggable onDragStart={e => e.dataTransfer.setData('content', c.id)} className="cal-item content" key={c.id}>{platform(ws, c.platform_id)?.name} · {c.title}</button>)}{tasks.slice(0, 2).map(t => <span className="cal-item task" key={t.id}>{t.title}</span>)}{follows.slice(0, 1).map(t => <span className="cal-item follow" key={t.id}>Follow up · {t.title}</span>)}</div>; })}</div></div></>;
 }
 function ContentPipeline({ ws, setQuick, mutate, active }: { ws: Workspace; setQuick: (x: string) => void; mutate: any; active: Profile }) {
+  const [editing, setEditing] = useState<ContentItem | null>(null);
   const stages = ['idea', 'planned', 'research', 'writing', 'design', 'review', 'approved', 'scheduled', 'published'];
   const drop = (e: React.DragEvent, stage: string) => { e.preventDefault(); const id = e.dataTransfer.getData('content'); const c = ws.content.find(x => x.id === id); if (id) mutate(() => updateContent(id, { stage }, active.id, c?.title), `Content moved to ${nice(stage)}`); };
-  return <><Header eyebrow="CONTENT" title="Content pipeline" description="Move work from idea to publication with a visible approval state." action={<button className="primary" onClick={() => setQuick('content')}><Plus size={16} /> New content</button>} /><div className="kanban content-board">{stages.map(stage => <div className="kanban-column" key={stage} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, stage)}><div className="column-head"><span><i className={`dot ${stage}`} />{nice(stage)}</span><b>{ws.content.filter(c => c.stage === stage).length}</b></div><div className="column-body">{ws.content.filter(c => c.stage === stage).map(c => <ContentCard key={c.id} item={c} ws={ws} />)}</div></div>)}</div></>;
+  return <><Header eyebrow="CONTENT" title="Content pipeline" description="Move work from idea to publication with a visible approval state." action={<button className="primary" onClick={() => setQuick('content')}><Plus size={16} /> New content</button>} /><div className="kanban content-board">{stages.map(stage => <div className="kanban-column" key={stage} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, stage)}><div className="column-head"><span><i className={`dot ${stage}`} />{nice(stage)}</span><b>{ws.content.filter(c => c.stage === stage).length}</b></div><div className="column-body">{ws.content.filter(c => c.stage === stage).map(c => <ContentCard key={c.id} item={c} ws={ws} mutate={mutate} active={active} edit={() => setEditing(c)} />)}</div></div>)}</div>
+    {editing ? <EditContent item={editing} ws={ws} close={() => setEditing(null)} mutate={mutate} active={active} /> : null}
+  </>;
 }
-function ContentCard({ item, ws }: { item: ContentItem; ws: Workspace }) { return <button className="task-card content-card" draggable onDragStart={e => e.dataTransfer.setData('content', item.id)}><div className="platform-label">{platform(ws, item.platform_id)?.name}</div><strong>{item.title}</strong><span className="task-project">{item.campaign || 'No campaign'}</span><div className="task-meta"><span>{person(ws, item.owner_id)?.name}</span><time>{shortDate(item.publish_date)}</time></div><Status value={item.approval_status} /></button>; }
+function ContentCard({ item, ws, mutate, active, edit }: { item: ContentItem; ws: Workspace; mutate: any; active: Profile; edit: () => void }) {
+  const remove = (e: React.MouseEvent) => { e.stopPropagation(); if (confirm(`Delete "${item.title}"?`)) mutate(() => deleteContent(item.id, item.title, active.id), 'Content deleted'); };
+  const openEdit = (e: React.MouseEvent) => { e.stopPropagation(); edit(); };
+  return <div className="task-card content-card" draggable onDragStart={e => e.dataTransfer.setData('content', item.id)}>
+    <div className="card-top"><div className="platform-label">{platform(ws, item.platform_id)?.name}</div><div className="person-actions"><button className="icon" onClick={openEdit} aria-label="Edit content"><Pencil size={14} /></button><button className="icon danger" onClick={remove} aria-label="Delete content"><Trash2 size={14} /></button></div></div>
+    <strong>{item.title}</strong><span className="task-project">{item.campaign || 'No campaign'}</span><div className="task-meta"><span>{person(ws, item.owner_id)?.name}</span><time>{shortDate(item.publish_date)}</time></div><Status value={item.approval_status} />
+  </div>;
+}
+function EditContent({ item, ws, close, mutate, active }: { item: ContentItem; ws: Workspace; close: () => void; mutate: any; active: Profile }) {
+  const [form, setForm] = useState({ title: item.title, platform_id: item.platform_id || '', owner_id: item.owner_id || '', campaign: item.campaign || '', publish_date: item.publish_date || '', stage: item.stage, brief: item.brief || '' });
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy(true);
+    if (await mutate(() => updateContent(item.id, { title: form.title, platform_id: form.platform_id || null, owner_id: form.owner_id || null, campaign: form.campaign, publish_date: form.publish_date || null, stage: form.stage, brief: form.brief }, active.id, form.title), 'Content updated')) close();
+    setBusy(false);
+  };
+  return <><div className="scrim modal-scrim" onClick={close} /><div className="modal"><div className="modal-head"><div><div className="eyebrow">EDIT CONTENT</div><h2>{item.title}</h2></div><button className="icon" onClick={close}><X size={19} /></button></div>
+    <form onSubmit={submit}>
+      <Field label="Content title"><input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></Field>
+      <Field label="Brief"><textarea value={form.brief} onChange={e => setForm({ ...form, brief: e.target.value })} /></Field>
+      <div className="form-grid">
+        <Field label="Platform"><select value={form.platform_id} onChange={e => setForm({ ...form, platform_id: e.target.value })}><option value="">No platform</option>{ws.platforms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+        <Field label="Owner"><select value={form.owner_id} onChange={e => setForm({ ...form, owner_id: e.target.value })}><option value="">Unassigned</option>{ws.profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+        <Field label="Publish date"><input type="date" value={form.publish_date} onChange={e => setForm({ ...form, publish_date: e.target.value })} /></Field>
+        <Field label="Stage"><select value={form.stage} onChange={e => setForm({ ...form, stage: e.target.value })}>{['idea', 'planned', 'research', 'writing', 'design', 'review', 'approved', 'scheduled', 'published'].map(x => <option key={x} value={x}>{nice(x)}</option>)}</select></Field>
+      </div>
+      <Field label="Campaign"><input value={form.campaign} onChange={e => setForm({ ...form, campaign: e.target.value })} /></Field>
+      <div className="modal-actions"><button type="button" className="ghost" onClick={close}>Cancel</button><button type="submit" className="primary" disabled={busy}>Save changes</button></div>
+    </form>
+  </div></>;
+}
 function TeamPage({ ws, active, mutate }: { ws: Workspace; active: Profile; mutate: any }) {
   const [editing, setEditing] = useState<Profile | null>(null);
   const isAdmin = active.access_role === 'admin';

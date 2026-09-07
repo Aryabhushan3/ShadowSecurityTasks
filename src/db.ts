@@ -302,6 +302,12 @@ export async function updateContent(id: string, patch: Record<string, unknown>, 
   await logActivity(actorId, stage ? `moved "${title}" to ${stage}` : `updated "${title}"`, 'content', id);
 }
 
+export async function deleteContent(id: string, title: string, actorId: string) {
+  const { error } = await client().from('content_items').delete().eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't delete the content item."); }
+  await logActivity(actorId, `deleted content "${title}"`, 'content', id);
+}
+
 // ---------- Team & platforms ----------
 
 export async function addProfile(input: { name: string; role: string; department?: string; email?: string }, actorId: string) {
