@@ -87,7 +87,7 @@ export interface NewTask {
   title: string; description?: string; assignee_id?: string | null; project_id?: string | null;
   status?: Task['status']; priority?: Task['priority'];
   due_date?: string | null; start_date?: string | null; follow_up_date?: string | null;
-  recurrence?: Task['recurrence'];
+  recurrence?: Task['recurrence']; recur_interval_days?: number | null;
 }
 
 export async function createTask(input: NewTask, actorId: string) {
@@ -105,6 +105,7 @@ export async function createTask(input: NewTask, actorId: string) {
     start_date: input.start_date || null,
     follow_up_date: input.follow_up_date || null,
     recurrence: input.recurrence || 'none',
+    recur_interval_days: input.recurrence === 'custom' ? (input.recur_interval_days || 1) : null,
     created_at: nowIso(), updated_at: nowIso(),
   });
   if (error) { console.error(error); throw new Error("Couldn't create the task. Please try again."); }
@@ -116,10 +117,11 @@ export async function createTask(input: NewTask, actorId: string) {
 }
 
 /** Recurrence step in days used to schedule the next occurrence. */
-function recurrenceDays(recurrence: Task['recurrence']): number | null {
+function recurrenceDays(recurrence: Task['recurrence'], customDays: number | null): number | null {
   if (recurrence === 'daily') return 1;
   if (recurrence === 'weekly') return 7;
   if (recurrence === 'monthly') return 30;
+  if (recurrence === 'custom') return customDays && customDays > 0 ? customDays : null;
   return null;
 }
 
@@ -139,7 +141,7 @@ export async function updateTask(id: string, patch: Partial<Task>, actorId: stri
   }
   // If a recurring task was just completed, schedule its next occurrence.
   if (patch.status === 'done' && previous && previous.recurrence !== 'none') {
-    const days = recurrenceDays(previous.recurrence);
+    const days = recurrenceDays(previous.recurrence, previous.recur_interval_days);
     if (days) {
       const nextDue = previous.due_date ? addDays(previous.due_date, days) : addDays(todayISO(), days);
       await createTask({
@@ -150,6 +152,7 @@ export async function updateTask(id: string, patch: Partial<Task>, actorId: stri
         priority: previous.priority,
         due_date: nextDue,
         recurrence: previous.recurrence,
+        recur_interval_days: previous.recur_interval_days,
       }, actorId);
     }
   }

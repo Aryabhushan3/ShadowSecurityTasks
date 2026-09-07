@@ -62,15 +62,17 @@ create table if not exists tasks (
   archived        boolean not null default false,
   position        integer not null default 0,
   recurrence      text not null default 'none'
-                  check (recurrence in ('none','daily','weekly','monthly')),
+                  check (recurrence in ('none','daily','weekly','monthly','custom')),
+  recur_interval_days integer,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
 
--- Adds the recurrence column to a database created before this feature existed.
+-- Adds the recurrence columns to a database created before this feature existed.
 alter table tasks add column if not exists recurrence text not null default 'none';
+alter table tasks add column if not exists recur_interval_days integer;
 alter table tasks drop constraint if exists tasks_recurrence_check;
-alter table tasks add constraint tasks_recurrence_check check (recurrence in ('none','daily','weekly','monthly'));
+alter table tasks add constraint tasks_recurrence_check check (recurrence in ('none','daily','weekly','monthly','custom'));
 
 create table if not exists checklist_items (
   id         text primary key,
