@@ -290,7 +290,7 @@ export async function createContent(input: Partial<ContentItem> & { title: strin
     position: Date.now(),
     created_at: nowIso(), updated_at: nowIso(),
   });
-  if (error) { console.error(error); throw new Error("Couldn't create the content item."); }
+  if (error) { console.error('[COO OS] createContent failed:', error); throw new Error(`Couldn't create the content item: ${error.message}`); }
   await logActivity(actorId, `created content "${title}"`, 'content', id);
   return id;
 }
