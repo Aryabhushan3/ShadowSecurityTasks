@@ -38,7 +38,7 @@ export async function loadWorkspace(): Promise<Workspace> {
   const sb = client();
   const [
     profiles, projects, tasks, checklist, comments, content,
-    platforms, milestones, meetings, notes, activity, notifications, attachments, settings,
+    platforms, milestones, meetings, notes, activity, notifications, attachments, announcements, settings,
   ] = await Promise.all([
     sb.from('profiles').select('*').eq('active', true).order('access_role', { ascending: false }).order('name'),
     sb.from('projects').select('*').order('deadline', { nullsFirst: false }),
@@ -53,6 +53,7 @@ export async function loadWorkspace(): Promise<Workspace> {
     sb.from('activity').select('*').order('created_at', { ascending: false }).limit(100),
     sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(50),
     sb.from('attachments').select('*').order('created_at', { ascending: false }),
+    sb.from('announcements').select('*').eq('active', true).order('created_at', { ascending: false }),
     sb.from('settings').select('*'),
   ]);
 
@@ -75,6 +76,7 @@ export async function loadWorkspace(): Promise<Workspace> {
     activity: activityRows.map(a => ({ ...a, profile_name: a.profile_id ? nameById.get(a.profile_id) : undefined })),
     notifications: unwrap(notifications, 'load notifications'),
     attachments: unwrap(attachments, 'load attachments'),
+    announcements: unwrap(announcements, 'load announcements'),
     settings: Object.fromEntries(settingsRows.map(s => [s.key, s.value])),
   };
 
@@ -90,7 +92,7 @@ export interface NewTask {
   recurrence?: Task['recurrence']; recur_interval_days?: number | null;
 }
 
-export async function createTask(input: NewTask, actorId: string) {
+async function insertOneTask(input: NewTask, actorId: string) {
   const title = input.title.trim();
   if (!title) throw new Error('Please give the task a name.');
   const id = uid('task');
@@ -114,6 +116,20 @@ export async function createTask(input: NewTask, actorId: string) {
     await notify(input.assignee_id, `You were assigned a new task: "${title}"`);
   }
   return id;
+}
+
+export async function createTask(input: NewTask, actorId: string) {
+  return insertOneTask(input, actorId);
+}
+
+/** Creates the same task once per selected teammate, so each person gets their own copy to complete. */
+export async function createTaskForMany(input: NewTask, assigneeIds: string[], actorId: string) {
+  const ids = assigneeIds.length ? assigneeIds : [input.assignee_id || null];
+  const created: string[] = [];
+  for (const personId of ids) {
+    created.push(await insertOneTask({ ...input, assignee_id: personId }, actorId));
+  }
+  return created;
 }
 
 /** Recurrence step in days used to schedule the next occurrence. */
@@ -412,6 +428,24 @@ export async function updateNote(id: string, patch: Partial<Note>) {
 export async function deleteNote(id: string) {
   const { error } = await client().from('notes').delete().eq('id', id);
   if (error) { console.error(error); throw new Error("Couldn't delete the note."); }
+}
+
+// ---------- Announcements ----------
+
+export async function createAnnouncement(input: { title: string; body?: string }, actorId: string) {
+  const title = input.title.trim();
+  if (!title) throw new Error('Please give the announcement a title.');
+  const { error } = await client().from('announcements').insert({
+    id: uid('ann'), title, body: input.body || '', created_by: actorId, active: true, created_at: nowIso(),
+  });
+  if (error) { console.error(error); throw new Error("Couldn't post the announcement."); }
+  await logActivity(actorId, `posted an announcement: "${title}"`, 'announcement');
+}
+
+export async function dismissAnnouncement(id: string, actorId: string) {
+  const { error } = await client().from('announcements').update({ active: false }).eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't remove the announcement."); }
+  await logActivity(actorId, 'removed an announcement', 'announcement', id);
 }
 
 // ---------- Backup ----------

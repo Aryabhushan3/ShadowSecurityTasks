@@ -60,7 +60,7 @@ create table if not exists tasks (
   follow_up_date  date,
   blocked_reason  text,
   archived        boolean not null default false,
-  position        integer not null default 0,
+  position        bigint not null default 0,
   recurrence      text not null default 'none'
                   check (recurrence in ('none','daily','weekly','monthly','custom')),
   recur_interval_days integer,
@@ -71,6 +71,13 @@ create table if not exists tasks (
 -- Adds the recurrence columns to a database created before this feature existed.
 alter table tasks add column if not exists recurrence text not null default 'none';
 alter table tasks add column if not exists recur_interval_days integer;
+
+-- Widens position columns from integer to bigint: content_items.position and
+-- checklist_items.position are seeded with Date.now() (a millisecond timestamp),
+-- which overflows a plain integer. Safe to re-run on an existing database.
+alter table tasks           alter column position type bigint;
+alter table checklist_items alter column position type bigint;
+alter table content_items   alter column position type bigint;
 alter table tasks drop constraint if exists tasks_recurrence_check;
 alter table tasks add constraint tasks_recurrence_check check (recurrence in ('none','daily','weekly','monthly','custom'));
 
@@ -79,7 +86,7 @@ create table if not exists checklist_items (
   task_id    text not null references tasks(id) on delete cascade,
   text       text not null,
   completed  boolean not null default false,
-  position   integer not null default 0,
+  position   bigint not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -123,7 +130,7 @@ create table if not exists content_items (
   comments_count  integer not null default 0,
   shares          integer not null default 0,
   saves           integer not null default 0,
-  position        integer not null default 0,
+  position        bigint not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -191,6 +198,16 @@ create table if not exists attachments (
   created_at  timestamptz not null default now()
 );
 create index if not exists idx_attachments_task on attachments(task_id);
+
+create table if not exists announcements (
+  id         text primary key,
+  title      text not null,
+  body       text not null default '',
+  created_by text references profiles(id) on delete set null,
+  active     boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_announcements_active on announcements(active);
 
 -- ---------- Indexes ----------
 
@@ -273,6 +290,7 @@ alter table activity        enable row level security;
 alter table notifications   enable row level security;
 alter table settings        enable row level security;
 alter table attachments     enable row level security;
+alter table announcements   enable row level security;
 
 -- Shared read for every signed-in workspace member
 do $$
@@ -280,7 +298,7 @@ declare t text;
 begin
   for t in select unnest(array[
     'profiles','projects','tasks','checklist_items','comments','platforms',
-    'content_items','milestones','meeting_notes','notes','activity','settings'
+    'content_items','milestones','meeting_notes','notes','activity','settings','announcements'
   ])
   loop
     execute format('drop policy if exists read_workspace on %I', t);
@@ -293,7 +311,7 @@ end $$;
 do $$
 declare t text;
 begin
-  for t in select unnest(array['profiles','projects','platforms','milestones','settings'])
+  for t in select unnest(array['profiles','projects','platforms','milestones','settings','announcements'])
   loop
     execute format('drop policy if exists admin_write on %I', t);
     execute format(

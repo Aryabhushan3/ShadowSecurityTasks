@@ -19,6 +19,7 @@ export interface Meeting { id: string; title: string; meeting_date: string; part
 export interface Note { id: string; title: string; body: string; created_by: string | null; pinned: boolean; updated_at: string }
 export interface Activity { id: string; profile_id: string | null; action: string; entity_type: string; entity_id: string | null; created_at: string; profile_name?: string }
 export interface Notification { id: string; profile_id: string; message: string; read: boolean; created_at: string }
+export interface Announcement { id: string; title: string; body: string; created_by: string | null; active: boolean; created_at: string }
 export interface Workload { profile_id: string; active: number; high: number; due_week: number; overdue: number; blocked: number; level: Level }
 
 export interface Attention {
@@ -45,6 +46,7 @@ export interface Workspace {
   activity: Activity[];
   notifications: Notification[];
   attachments: Attachment[];
+  announcements: Announcement[];
   settings: Record<string, string>;
   attention: Attention;
   workload: Workload[];
