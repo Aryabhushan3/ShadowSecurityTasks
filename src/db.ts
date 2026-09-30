@@ -1,6 +1,6 @@
 import { client } from './supabase';
 import { addDays, deriveWorkspace, todayISO, type RawWorkspace } from './derive';
-import type { ContentItem, Note, Profile, Task, Workspace } from './types';
+import type { ContentItem, Lab, LabComment, Meeting, Note, Profile, Task, Workspace } from './types';
 
 const uid = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -57,6 +57,15 @@ export async function loadWorkspace(): Promise<Workspace> {
     sb.from('settings').select('*'),
   ]);
 
+  // Labs live in their own tables, added by a later migration. If that SQL has
+  // not been run yet, the rest of the workspace must still open normally.
+  const [labsRes, labCommentsRes] = await Promise.all([
+    sb.from('labs').select('*').order('position'),
+    sb.from('lab_comments').select('*').order('created_at'),
+  ]);
+  const labsReady = !labsRes.error && !labCommentsRes.error;
+  if (!labsReady) console.warn('[COO OS] labs tables not available yet:', labsRes.error ?? labCommentsRes.error);
+
   const profileRows = unwrap<Profile[]>(profiles, 'load the team');
   const settingsRows = unwrap<{ key: string; value: string }[]>(settings, 'load settings');
   const activityRows = unwrap<RawWorkspace['activity']>(activity, 'load activity');
@@ -77,6 +86,9 @@ export async function loadWorkspace(): Promise<Workspace> {
     notifications: unwrap(notifications, 'load notifications'),
     attachments: unwrap(attachments, 'load attachments'),
     announcements: unwrap(announcements, 'load announcements'),
+    labs: labsReady ? ((labsRes.data ?? []) as Lab[]).map(l => ({ ...l, checklist: Array.isArray(l.checklist) ? l.checklist : [] })) : [],
+    labComments: labsReady ? (labCommentsRes.data ?? []) as LabComment[] : [],
+    labsReady,
     settings: Object.fromEntries(settingsRows.map(s => [s.key, s.value])),
   };
 
@@ -324,6 +336,86 @@ export async function deleteContent(id: string, title: string, actorId: string) 
   await logActivity(actorId, `deleted content "${title}"`, 'content', id);
 }
 
+// ---------- Labs ----------
+
+export const LAB_STAGES = ['idea', 'in_progress', 'review', 'done'] as const;
+
+const labStageName = (stage: string) =>
+  ({ idea: 'Idea', in_progress: 'In progress', review: 'Review', done: 'Done' } as Record<string, string>)[stage] || stage;
+
+export interface NewLab {
+  title: string; summary?: string; track?: string; difficulty?: Lab['difficulty']; priority?: Lab['priority'];
+  owner_id?: string | null; reviewer_id?: string | null; due_date?: string | null; stage?: Lab['stage']; inspiration?: string;
+}
+
+export async function createLab(input: NewLab, actorId: string) {
+  const title = input.title.trim();
+  if (!title) throw new Error('Please give the lab a name.');
+  const id = uid('lab');
+  const { error } = await client().from('labs').insert({
+    id, title,
+    stage: input.stage || 'idea',
+    track: input.track?.trim() || '',
+    difficulty: input.difficulty || 'basic',
+    priority: input.priority || 'medium',
+    owner_id: input.owner_id || null,
+    reviewer_id: input.reviewer_id || null,
+    due_date: input.due_date || null,
+    summary: input.summary || '',
+    inspiration: input.inspiration || '',
+    checklist: [],
+    position: Date.now(),
+    created_by: actorId,
+    created_at: nowIso(), updated_at: nowIso(),
+  });
+  if (error) { console.error('[COO OS] createLab failed:', error); throw new Error(`Couldn't create the lab: ${error.message}`); }
+  await logActivity(actorId, `added lab idea "${title}"`, 'lab', id);
+  if (input.owner_id && input.owner_id !== actorId) await notify(input.owner_id, `You were asked to build the lab "${title}"`);
+  return id;
+}
+
+export async function updateLab(id: string, patch: Partial<Lab>, actorId: string, previous?: Lab) {
+  const { error } = await client().from('labs').update({ ...patch, updated_at: nowIso() }).eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't save the lab. You may only edit labs you build or review."); }
+  const title = patch.title ?? previous?.title ?? 'a lab';
+  const moved = patch.stage && patch.stage !== previous?.stage;
+  // Only log meaningful changes, not every keystroke-level text save.
+  if (moved) await logActivity(actorId, `moved lab "${title}" to ${labStageName(patch.stage!)}`, 'lab', id);
+  if (patch.owner_id && patch.owner_id !== previous?.owner_id && patch.owner_id !== actorId) {
+    await notify(patch.owner_id, `You were asked to build the lab "${title}"`);
+  }
+  // When a lab reaches Review, tell the reviewer it is waiting for them.
+  const reviewer = patch.reviewer_id ?? previous?.reviewer_id;
+  if (patch.stage === 'review' && previous?.stage !== 'review' && reviewer && reviewer !== actorId) {
+    await notify(reviewer, `Lab "${title}" is ready for your review`);
+  }
+  // When a lab goes back from Review to In progress, tell the builder.
+  const owner = patch.owner_id ?? previous?.owner_id;
+  if (patch.stage === 'in_progress' && previous?.stage === 'review' && owner && owner !== actorId) {
+    await notify(owner, `Lab "${title}" was sent back with review feedback`);
+  }
+}
+
+export async function deleteLab(id: string, title: string, actorId: string) {
+  const { error } = await client().from('labs').delete().eq('id', id);
+  if (error) { console.error(error); throw new Error("Couldn't delete the lab. Only admins can delete labs."); }
+  await logActivity(actorId, `deleted lab "${title}"`, 'lab', id);
+}
+
+export async function addLabComment(labId: string, body: string, profileId: string) {
+  const value = body.trim();
+  if (!value) throw new Error('Please write the comment first.');
+  const { error } = await client().from('lab_comments')
+    .insert({ id: uid('labc'), lab_id: labId, profile_id: profileId, body: value, created_at: nowIso() });
+  if (error) { console.error(error); throw new Error("Couldn't post the comment."); }
+  const { data: lab } = await client().from('labs').select('title, owner_id, reviewer_id').eq('id', labId).maybeSingle();
+  if (lab) {
+    for (const who of new Set([lab.owner_id, lab.reviewer_id])) {
+      if (who && who !== profileId) await notify(who, `New comment on lab "${lab.title}"`);
+    }
+  }
+}
+
 // ---------- Team & platforms ----------
 
 export async function addProfile(input: { name: string; role: string; department?: string; email?: string }, actorId: string) {
@@ -401,12 +493,19 @@ export async function createMeeting(
 export async function convertActionToTask(
   meetingTitle: string,
   input: NewTask,
+  assigneeIds: string[],
   actorId: string,
+  meeting?: Meeting,
+  actionIndex?: number,
 ) {
-  const id = await createTask({ ...input, status: 'todo' }, actorId);
-  await client().from('tasks')
-    .update({ description: `Created from meeting: ${meetingTitle}` }).eq('id', id);
-  return id;
+  const ids = await createTaskForMany({ ...input, status: 'todo', description: input.description || `Created from meeting: ${meetingTitle}` }, assigneeIds, actorId);
+  // Tick the action item off so it isn't converted twice.
+  if (meeting && actionIndex !== undefined && meeting.action_items[actionIndex]) {
+    const items = meeting.action_items.map((a, i) => i === actionIndex ? { ...a, done: true } : a);
+    const { error } = await client().from('meeting_notes').update({ action_items: items, updated_at: nowIso() }).eq('id', meeting.id);
+    if (error) console.error('[COO OS] could not tick action item:', error);
+  }
+  return ids;
 }
 
 export async function createNote(input: { title: string; body: string }, actorId: string) {
@@ -459,7 +558,8 @@ export function downloadBackup(ws: Workspace) {
     checklist: ws.checklist, comments: ws.comments, content: ws.content,
     platforms: ws.platforms, milestones: ws.milestones, meetings: ws.meetings,
     notes: ws.notes, activity: ws.activity, settings: ws.settings,
-    attachments: ws.attachments,
+    attachments: ws.attachments, announcements: ws.announcements,
+    labs: ws.labs, lab_comments: ws.labComments,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

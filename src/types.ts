@@ -20,6 +20,16 @@ export interface Note { id: string; title: string; body: string; created_by: str
 export interface Activity { id: string; profile_id: string | null; action: string; entity_type: string; entity_id: string | null; created_at: string; profile_name?: string }
 export interface Notification { id: string; profile_id: string; message: string; read: boolean; created_at: string }
 export interface Announcement { id: string; title: string; body: string; created_by: string | null; active: boolean; created_at: string }
+export type LabStage = 'idea' | 'in_progress' | 'review' | 'done';
+export type LabDifficulty = 'basic' | 'intermediate' | 'advanced';
+export interface Lab {
+  id: string; title: string; stage: LabStage; track: string; difficulty: LabDifficulty; priority: Priority;
+  owner_id: string | null; reviewer_id: string | null; due_date: string | null;
+  summary: string; inspiration: string; objectives: string; scenario: string; environment: string;
+  build_steps: string; solution: string; hints: string; acceptance: string; review_notes: string; lab_url: string;
+  checklist: ActionItem[]; position: number; created_by: string | null; created_at: string; updated_at: string;
+}
+export interface LabComment { id: string; lab_id: string; profile_id: string | null; body: string; created_at: string }
 export interface Workload { profile_id: string; active: number; high: number; due_week: number; overdue: number; blocked: number; level: Level }
 
 export interface Attention {
@@ -30,6 +40,7 @@ export interface Attention {
 export interface Weekly {
   completed: Task[]; overdue: Task[]; blocked: Task[]; upcoming: Task[];
   published: ContentItem[]; contentUpcoming: ContentItem[];
+  labsDone: Lab[];
 }
 
 export interface Workspace {
@@ -47,6 +58,10 @@ export interface Workspace {
   notifications: Notification[];
   attachments: Attachment[];
   announcements: Announcement[];
+  labs: Lab[];
+  labComments: LabComment[];
+  /** False until the Labs section of supabase/schema.sql has been run on the database. */
+  labsReady: boolean;
   settings: Record<string, string>;
   attention: Attention;
   workload: Workload[];

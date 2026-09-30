@@ -430,3 +430,84 @@ create policy attach_storage_write on storage.objects for insert to authenticate
   with check (bucket_id = 'task-attachments' and public.has_access());
 create policy attach_storage_delete on storage.objects for delete to authenticated
   using (bucket_id = 'task-attachments' and (public.is_admin() or owner = auth.uid()));
+
+-- ============================================================
+-- Labs board (added 2026-09-30). Re-running this whole file is safe.
+-- ============================================================
+
+create table if not exists labs (
+  id            text primary key,
+  title         text not null,
+  stage         text not null default 'idea'
+                check (stage in ('idea','in_progress','review','done')),
+  track         text not null default '',          -- module/topic, e.g. 'Web Security'
+  difficulty    text not null default 'basic'
+                check (difficulty in ('basic','intermediate','advanced')),
+  priority      text not null default 'medium'
+                check (priority in ('low','medium','high','urgent')),
+  owner_id      text references profiles(id) on delete set null,   -- who builds it
+  reviewer_id   text references profiles(id) on delete set null,   -- who checks it
+  due_date      date,
+  summary       text not null default '',   -- what lab should be created
+  inspiration   text not null default '',   -- real bug report / write-up it is based on
+  objectives    text not null default '',   -- what the learner should learn
+  scenario      text not null default '',   -- the story / setup the learner sees
+  environment   text not null default '',   -- tech stack, tools, how it runs
+  build_steps   text not null default '',   -- how to build it
+  solution      text not null default '',   -- intended solution + flag
+  hints         text not null default '',   -- hints shown to learners
+  acceptance    text not null default '',   -- when is it "done"
+  review_notes  text not null default '',   -- reviewer feedback
+  lab_url       text not null default '',   -- repo / live link
+  checklist     jsonb not null default '[]'::jsonb,
+  position      bigint not null default 0,
+  created_by    text references profiles(id) on delete set null,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create table if not exists lab_comments (
+  id         text primary key,
+  lab_id     text not null references labs(id) on delete cascade,
+  profile_id text references profiles(id) on delete set null,
+  body       text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_labs_stage        on labs(stage);
+create index if not exists idx_labs_owner        on labs(owner_id);
+create index if not exists idx_lab_comments_lab  on lab_comments(lab_id);
+
+alter table labs         enable row level security;
+alter table lab_comments enable row level security;
+
+-- Everyone in the workspace can read labs and their discussion.
+drop policy if exists read_workspace on labs;
+create policy read_workspace on labs for select to authenticated using (public.has_access());
+drop policy if exists read_workspace on lab_comments;
+create policy read_workspace on lab_comments for select to authenticated using (public.has_access());
+
+-- Labs: admins anything; any member can add an idea; members can edit labs
+-- they build or review, and can pick up (claim) an unowned idea.
+drop policy if exists labs_admin  on labs;
+drop policy if exists labs_insert on labs;
+drop policy if exists labs_member on labs;
+create policy labs_admin on labs for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+create policy labs_insert on labs for insert to authenticated
+  with check (public.has_access());
+create policy labs_member on labs for update to authenticated
+  using (owner_id is null or public.current_profile_id() in (owner_id, reviewer_id))
+  with check (owner_id is null or public.current_profile_id() in (owner_id, reviewer_id));
+
+-- Lab discussion: anyone may comment as themselves; admins moderate.
+drop policy if exists lab_comments_admin  on lab_comments;
+drop policy if exists lab_comments_insert on lab_comments;
+create policy lab_comments_admin on lab_comments for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+create policy lab_comments_insert on lab_comments for insert to authenticated
+  with check (profile_id = public.current_profile_id());
+
+-- Makes the new tables visible to the app immediately.
+notify pgrst, 'reload schema';
+

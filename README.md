@@ -1,31 +1,32 @@
 # Shadow Security COO OS
 
-A shared, no-login operating workspace for Shadow Security. It combines COO attention management, tasks, projects, team workload, content planning, calendars, notes, and weekly review.
+The shared operating workspace for Shadow Security: attention management, tasks, projects, team workload, content pipeline and calendar, the Suraksha Labs board, notes and meetings, and a weekly review.
 
-## Important behavior
+## How it works
 
-- There is no login, signup, password, or authentication.
-- “Continue as” only personalises My Work and records who made a change.
-- All profiles use the same central SQLite database.
-- The local service listens only on `127.0.0.1:4181`; it is not available to the team over the internet yet.
-- Shastra remains the primary product in seeded plans. Suraksha is tracked separately and does not replace Shastra.
+- React + TypeScript + Vite frontend, deployed on Vercel.
+- Supabase for the database, sign-in and file attachments.
+- Sign-in is invite-only. An admin adds a person's email under Settings → Team, then that person signs up with the same email.
+- Row-level security in `supabase/schema.sql` enforces access: admins can change everything, members can change their own work.
+- The browser only ever uses the public anon key. Never put the `service_role` key in `.env`.
 
-## Technology
+## Setup
 
-React + TypeScript + Vite frontend, Node + TypeScript backend, SQLite database. The browser calls a central API, so SQLite can later be replaced with PostgreSQL without turning each person's computer into a separate copy.
+1. Copy `.env.example` to `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+2. In Supabase → SQL Editor, run `supabase/schema.sql`. It is safe to re-run; it also applies new features, such as the Labs tables, to an existing database.
+3. For a fresh demo only: run `supabase/seed.sql`. It clears and reloads demo data, so never run it on the real workspace.
 
 ## Commands
 
-- `npm run dev` — development frontend and backend
-- `npm run check` — typecheck, tests, and production build
-- `npm start` — run the built local application on `127.0.0.1:4181`
+- `npm run dev`: local development at http://127.0.0.1:5173
+- `npm run typecheck`: TypeScript check
+- `npm run build`: typecheck and production build into `dist/`
 
-## Data
+## Code map
 
-- Live database: `D:\ShadowSecurity\COO-OS\data\coo-os.db`
-- Backups: `D:\ShadowSecurity\COO-OS\backups`
-- Restore validates the backup and creates a pre-restore safety snapshot.
-
-## Online future
-
-When Arya approves deployment: host the built frontend behind HTTPS, run the Node API as a managed service, replace SQLite with managed PostgreSQL, then add real access controls before exposing the workspace publicly. Do not publish the current no-login build directly to the internet.
+- `src/App.tsx`: every screen (dashboard, tasks, labs, content, team and so on)
+- `src/db.ts`: all reads and writes to Supabase
+- `src/derive.ts`: computed views (attention, workload, project health, weekly review)
+- `src/types.ts`: data shapes
+- `src/auth.ts`: sign-in and session
+- `supabase/schema.sql`: tables, access rules and storage bucket

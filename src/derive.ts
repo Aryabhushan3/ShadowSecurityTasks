@@ -1,5 +1,5 @@
 import type {
-  Activity, Announcement, Attachment, Attention, Checklist, Comment, ContentItem, Health, Level, Meeting,
+  Activity, Announcement, Attachment, Attention, Checklist, Comment, ContentItem, Health, Lab, LabComment, Level, Meeting,
   Milestone, Note, Notification, Platform, Profile, Project, ProjectRow, Task,
   Weekly, Workload, Workspace,
 } from './types';
@@ -80,6 +80,9 @@ export interface RawWorkspace {
   notifications: Notification[];
   attachments: Attachment[];
   announcements: Announcement[];
+  labs: Lab[];
+  labComments: LabComment[];
+  labsReady: boolean;
   settings: Record<string, string>;
 }
 
@@ -129,6 +132,7 @@ export function deriveWorkspace(raw: RawWorkspace, today = todayISO()): Workspac
     upcoming: open.filter(t => t.due_date && t.due_date >= today && t.due_date <= weekAhead),
     published: raw.content.filter(c => c.stage === 'published' && c.publish_date && c.publish_date >= weekBehind),
     contentUpcoming: raw.content.filter(c => c.publish_date && c.publish_date >= today && c.publish_date <= weekAhead),
+    labsDone: raw.labs.filter(l => l.stage === 'done' && l.updated_at.slice(0, 10) >= weekBehind),
   };
 
   return {
@@ -146,6 +150,9 @@ export function deriveWorkspace(raw: RawWorkspace, today = todayISO()): Workspac
     notifications: raw.notifications,
     attachments: raw.attachments,
     announcements: raw.announcements,
+    labs: raw.labs,
+    labComments: raw.labComments,
+    labsReady: raw.labsReady,
     settings: raw.settings,
     attention,
     workload,
